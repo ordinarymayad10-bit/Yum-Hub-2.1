@@ -42,6 +42,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ lang, onExit }) => {
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState('');
 
+  // Password Reset state
+  const [isResetMode, setIsResetMode] = useState(false);
+  const [resetEmail, setResetEmail] = useState('mnonly357@gmail.com');
+  const [resetCode, setResetCode] = useState('');
+  const [resetNewPassword, setResetNewPassword] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetStep, setResetStep] = useState<1 | 2>(1);
+  const [resetGeneratedCode, setResetGeneratedCode] = useState('');
+  const [resetSuccessMessage, setResetSuccessMessage] = useState('');
+  const [resetErrorMessage, setResetErrorMessage] = useState('');
+
   // Dashboard Tab state
   const [activeTab, setActiveTab] = useState<'overview' | 'orders' | 'custom' | 'products' | 'inventory' | 'settings'>('overview');
 
@@ -202,6 +213,79 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ lang, onExit }) => {
     safeStorage.removeItem('yumhub_admin_token');
     setToken('');
     setAdminUser(null);
+  };
+
+  // Handle requesting password reset recovery code
+  const handleRequestResetCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetErrorMessage('');
+    setResetSuccessMessage('');
+    setResetLoading(true);
+
+    try {
+      const res = await fetch('/api/admin/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: resetEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to generate recovery code.');
+      }
+      setResetGeneratedCode(data.recoveryCode || '');
+      setResetCode(data.recoveryCode || '');
+      setResetStep(2);
+      setResetSuccessMessage(
+        lang === 'bn'
+          ? `আপনার অ্যাকাউন্ট ভেরিফিকেশন কোড: ${data.recoveryCode}`
+          : `Recovery Code generated: ${data.recoveryCode}. Enter new password below.`
+      );
+    } catch (err: any) {
+      setResetErrorMessage(err.message || 'Error occurred.');
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  // Handle resetting password with recovery code
+  const handlePerformReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetErrorMessage('');
+    setResetSuccessMessage('');
+    setResetLoading(true);
+
+    try {
+      const res = await fetch('/api/admin/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: resetEmail,
+          code: resetCode,
+          new_password: resetNewPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to reset password.');
+      }
+      setResetSuccessMessage(
+        lang === 'bn'
+          ? 'পাসওয়ার্ড সফলভাবে পরিবর্তন করা হয়েছে! নতুন পাসওয়ার্ড দিয়ে লগইন করা হচ্ছে...'
+          : 'Password successfully changed! Logging you in with new password...'
+      );
+      setLoginPassword(resetNewPassword);
+      setTimeout(() => {
+        setIsResetMode(false);
+        setResetStep(1);
+        setResetGeneratedCode('');
+        setResetNewPassword('');
+        setResetCode('');
+      }, 1800);
+    } catch (err: any) {
+      setResetErrorMessage(err.message || 'Error resetting password.');
+    } finally {
+      setResetLoading(false);
+    }
   };
 
   // Update order status
@@ -399,7 +483,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ lang, onExit }) => {
     );
   }
 
-  // If Not Authenticated -> Show Admin Login Form
+  // If Not Authenticated -> Show Admin Login Form or Forgot Password Form
   if (!token || !adminUser) {
     return (
       <div className="min-h-screen bg-[#140a05] py-16 px-4 flex flex-col items-center justify-center">
@@ -412,67 +496,222 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ lang, onExit }) => {
               YUM HUB Admin Portal
             </h1>
             <p className="text-xs text-[#a99485]">
-              Balaganj Bakery Management & Order Control
+              {isResetMode
+                ? (lang === 'bn' ? 'অ্যাডমিন পাসওয়ার্ড রিসেট সিস্টেম' : 'Admin Password Recovery & Reset')
+                : (lang === 'bn' ? 'বালাগঞ্জ বেকারি কন্ট্রোল ও অর্ডার ম্যানেজমেন্ট' : 'Balaganj Bakery Management & Order Control')}
             </p>
           </div>
 
-          {loginError && (
-            <div className="p-3 rounded-lg bg-red-950/80 border border-red-800 text-red-200 text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{loginError}</span>
+          {!isResetMode ? (
+            /* ================= LOGIN FORM ================= */
+            <>
+              {loginError && (
+                <div className="p-3 rounded-lg bg-red-950/80 border border-red-800 text-red-200 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{loginError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-[#c4b5a8] mb-1 flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-[#c59b27]" />
+                    <span>{lang === 'bn' ? 'অ্যাডমিন ইমেইল' : 'Admin Email Address'}</span>
+                  </label>
+                  <input
+                    type="email"
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    required
+                    className="w-full px-3.5 py-2.5 rounded-lg bg-[#251209] border border-[#3e2013] text-sm text-[#f7f2eb] focus:outline-none focus:border-[#c59b27]"
+                  />
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-medium text-[#c4b5a8] flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-[#c59b27]" />
+                      <span>{lang === 'bn' ? 'পাসওয়ার্ড' : 'Secure Password'}</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsResetMode(true);
+                        setResetErrorMessage('');
+                        setResetSuccessMessage('');
+                        setResetEmail(loginEmail || 'mnonly357@gmail.com');
+                      }}
+                      className="text-[11px] text-[#e5c158] hover:underline cursor-pointer"
+                    >
+                      {lang === 'bn' ? 'পাসওয়ার্ড ভুলে গেছেন?' : 'Forgot Password?'}
+                    </button>
+                  </div>
+                  <input
+                    type="password"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder={lang === 'bn' ? 'পাসওয়ার্ড লিখুন' : 'Enter password'}
+                    required
+                    className="w-full px-3.5 py-2.5 rounded-lg bg-[#251209] border border-[#3e2013] text-sm text-[#f7f2eb] focus:outline-none focus:border-[#c59b27]"
+                  />
+                </div>
+
+                {/* Quick Credentials Info & 1-Click Auto Fill */}
+                <div className="p-3 rounded-lg bg-[#221008] border border-[#341b0f] text-[11px] text-[#a99485] space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[#e5c158] font-bold">
+                      {lang === 'bn' ? 'মালিকের ডিফল্ট পাসওয়ার্ড:' : 'Default Credentials:'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setLoginPassword('YumHub@2026!')}
+                      className="px-2 py-0.5 rounded bg-[#3b1d0e] border border-[#6b3a1d] text-[#e5c158] hover:bg-[#4d2511] font-mono text-[10px] cursor-pointer transition-colors"
+                    >
+                      {lang === 'bn' ? 'অটো-ফিল করুন' : 'Auto Fill'}
+                    </button>
+                  </div>
+                  <div className="font-mono text-white text-[10px] bg-[#170a05] px-2 py-1 rounded border border-[#2b140a]">
+                    Email: <span className="text-[#e5c158]">mnonly357@gmail.com</span><br />
+                    Password: <span className="text-[#e5c158]">YumHub@2026!</span>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loginLoading}
+                  className="w-full py-3 rounded-xl bg-gradient-to-r from-[#c59b27] via-[#d4af37] to-[#b38728] hover:from-[#d4af37] hover:to-[#c59b27] text-[#160b06] text-sm font-bold shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                >
+                  <Shield className="w-4 h-4" />
+                  <span>{loginLoading ? (lang === 'bn' ? 'যাচাই করা হচ্ছে...' : 'Authenticating...') : (lang === 'bn' ? 'ড্যাশবোর্ডে প্রবেশ করুন' : 'Sign In to Dashboard')}</span>
+                </button>
+              </form>
+            </>
+          ) : (
+            /* ================= PASSWORD RESET FORM ================= */
+            <div className="space-y-4">
+              {resetErrorMessage && (
+                <div className="p-3 rounded-lg bg-red-950/80 border border-red-800 text-red-200 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{resetErrorMessage}</span>
+                </div>
+              )}
+
+              {resetSuccessMessage && (
+                <div className="p-3 rounded-lg bg-emerald-950/80 border border-emerald-800 text-emerald-200 text-xs flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 shrink-0" />
+                  <span>{resetSuccessMessage}</span>
+                </div>
+              )}
+
+              {resetStep === 1 ? (
+                /* Step 1: Request Recovery Code */
+                <form onSubmit={handleRequestResetCode} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-[#c4b5a8] mb-1 flex items-center gap-1.5">
+                      <Mail className="w-3.5 h-3.5 text-[#c59b27]" />
+                      <span>{lang === 'bn' ? 'অ্যাডমিন ইমেইল এড্রেস' : 'Admin Email Address'}</span>
+                    </label>
+                    <input
+                      type="email"
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      required
+                      className="w-full px-3.5 py-2.5 rounded-lg bg-[#251209] border border-[#3e2013] text-sm text-[#f7f2eb] focus:outline-none focus:border-[#c59b27]"
+                    />
+                  </div>
+
+                  <p className="text-[11px] text-[#a99485] leading-relaxed">
+                    {lang === 'bn'
+                      ? 'বাটনে ক্লিক করলে তাৎক্ষণিক ৬-সংখ্যার সিকিউরিটি কোড তৈরি হবে যার মাধ্যমে আপনি নতুন পাসওয়ার্ড সেট করতে পারবেন।'
+                      : 'Click below to instantly generate a 6-digit recovery code to set your new password.'}
+                  </p>
+
+                  <button
+                    type="submit"
+                    disabled={resetLoading}
+                    className="w-full py-3 rounded-xl bg-gradient-to-r from-[#c59b27] via-[#d4af37] to-[#b38728] hover:from-[#d4af37] hover:to-[#c59b27] text-[#160b06] text-sm font-bold shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${resetLoading ? 'animate-spin' : ''}`} />
+                    <span>{resetLoading ? (lang === 'bn' ? 'কোড তৈরি হচ্ছে...' : 'Generating Code...') : (lang === 'bn' ? 'সিকিউরিটি কোড গ্রহণ করুন' : 'Get Recovery Code')}</span>
+                  </button>
+                </form>
+              ) : (
+                /* Step 2: Input Recovery Code & New Password */
+                <form onSubmit={handlePerformReset} className="space-y-4">
+                  {resetGeneratedCode && (
+                    <div className="p-3 rounded-lg bg-[#2e170c] border border-[#c59b27] text-center space-y-1">
+                      <span className="text-[10px] text-[#c4b5a8] uppercase tracking-wider block">
+                        {lang === 'bn' ? 'আপনার সিকিউরিটি কোড' : 'Your Recovery Code'}
+                      </span>
+                      <div className="text-xl font-mono font-bold tracking-widest text-[#e5c158]">
+                        {resetGeneratedCode}
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-medium text-[#c4b5a8] mb-1">
+                      {lang === 'bn' ? '৬-সংখ্যার কোড' : '6-Digit Recovery Code'}
+                    </label>
+                    <input
+                      type="text"
+                      value={resetCode}
+                      onChange={(e) => setResetCode(e.target.value)}
+                      placeholder="e.g. 123456"
+                      required
+                      className="w-full px-3.5 py-2.5 rounded-lg bg-[#251209] border border-[#3e2013] text-sm text-[#f7f2eb] font-mono tracking-wider focus:outline-none focus:border-[#c59b27]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-[#c4b5a8] mb-1 flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-[#c59b27]" />
+                      <span>{lang === 'bn' ? 'নতুন পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)' : 'New Password (min 6 chars)'}</span>
+                    </label>
+                    <input
+                      type="password"
+                      value={resetNewPassword}
+                      onChange={(e) => setResetNewPassword(e.target.value)}
+                      placeholder={lang === 'bn' ? 'নতুন পাসওয়ার্ড লিখুন' : 'Enter new password'}
+                      required
+                      minLength={6}
+                      className="w-full px-3.5 py-2.5 rounded-lg bg-[#251209] border border-[#3e2013] text-sm text-[#f7f2eb] focus:outline-none focus:border-[#c59b27]"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={resetLoading}
+                    className="w-full py-3 rounded-xl bg-gradient-to-r from-[#c59b27] via-[#d4af37] to-[#b38728] hover:from-[#d4af37] hover:to-[#c59b27] text-[#160b06] text-sm font-bold shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
+                  >
+                    <CheckCircle className="w-4 h-4" />
+                    <span>{resetLoading ? (lang === 'bn' ? 'রিসেট করা হচ্ছে...' : 'Resetting Password...') : (lang === 'bn' ? 'পাসওয়ার্ড পরিবর্তন নিশ্চিত করুন' : 'Confirm & Save New Password')}</span>
+                  </button>
+                </form>
+              )}
+
+              <div className="pt-2 text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsResetMode(false);
+                    setResetErrorMessage('');
+                    setResetSuccessMessage('');
+                  }}
+                  className="text-xs text-[#c59b27] hover:underline cursor-pointer"
+                >
+                  ← {lang === 'bn' ? 'লগইনে ফিরে যান' : 'Back to Admin Login'}
+                </button>
+              </div>
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-[#c4b5a8] mb-1 flex items-center gap-1.5">
-                <Mail className="w-3.5 h-3.5 text-[#c59b27]" />
-                <span>Admin Email Address</span>
-              </label>
-              <input
-                type="email"
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                required
-                className="w-full px-3.5 py-2.5 rounded-lg bg-[#251209] border border-[#3e2013] text-sm text-[#f7f2eb] focus:outline-none focus:border-[#c59b27]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-[#c4b5a8] mb-1 flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-[#c59b27]" />
-                <span>Secure Password</span>
-              </label>
-              <input
-                type="password"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                placeholder="Enter password"
-                required
-                className="w-full px-3.5 py-2.5 rounded-lg bg-[#251209] border border-[#3e2013] text-sm text-[#f7f2eb] focus:outline-none focus:border-[#c59b27]"
-              />
-            </div>
-
-            <div className="p-3 rounded-lg bg-[#221008] border border-[#341b0f] text-[11px] text-[#a99485] leading-relaxed">
-              <strong className="text-[#e5c158]">Administrator Notice:</strong> Initial credentials configured for owner email <span className="text-white font-mono">mnonly357@gmail.com</span>. Protected by bcrypt hash & JWT.
-            </div>
-
-            <button
-              type="submit"
-              disabled={loginLoading}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-[#c59b27] via-[#d4af37] to-[#b38728] hover:from-[#d4af37] hover:to-[#c59b27] text-[#160b06] text-sm font-bold shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60"
-            >
-              <Shield className="w-4 h-4" />
-              <span>{loginLoading ? 'Authenticating...' : 'Sign In to Dashboard'}</span>
-            </button>
-          </form>
-
-          <div className="pt-2 text-center">
+          <div className="pt-2 text-center border-t border-[#2e170c]">
             <button
               onClick={onExit}
               className="text-xs text-[#a99485] hover:text-[#e5c158] transition-colors cursor-pointer"
             >
-              ← Return to Bakery Storefront
+              ← {lang === 'bn' ? 'বেকারি শপে ফিরুন' : 'Return to Bakery Storefront'}
             </button>
           </div>
         </div>

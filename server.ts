@@ -101,6 +101,15 @@ db.exec(`
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS password_resets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    code TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    used INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // Seed Admin if not exists
@@ -671,6 +680,74 @@ app.post('/api/admin/login', (req, res) => {
       name: admin.name,
       role: admin.role,
     },
+  });
+});
+
+// Request Password Reset Code
+app.post('/api/admin/forgot-password', (req, res) => {
+  const { email } = req.body;
+  if (!email || typeof email !== 'string') {
+    return res.status(400).json({ error: 'Valid email is required.' });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const admin = db.prepare('SELECT id, email, name FROM admins WHERE email = ?').get(cleanEmail) as any;
+  if (!admin) {
+    return res.status(404).json({ error: 'No admin account found with this email address.' });
+  }
+
+  // Generate a 6-digit recovery code
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes
+
+  db.prepare('INSERT INTO password_resets (email, code, expires_at) VALUES (?, ?, ?)').run(cleanEmail, code, expiresAt);
+
+  console.log(`[Admin Security] Password reset code for ${cleanEmail}: ${code}`);
+
+  res.json({
+    success: true,
+    message: `Security recovery code generated for ${cleanEmail}.`,
+    recoveryCode: code,
+  });
+});
+
+// Reset Password with Recovery Code
+app.post('/api/admin/reset-password', (req, res) => {
+  const { email, code, new_password } = req.body;
+  if (!email || !code || !new_password) {
+    return res.status(400).json({ error: 'Email, recovery code, and new password are required.' });
+  }
+
+  if (new_password.trim().length < 6) {
+    return res.status(400).json({ error: 'New password must be at least 6 characters.' });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanCode = code.trim();
+
+  const resetRecord = db.prepare(`
+    SELECT id, email, code, expires_at, used
+    FROM password_resets
+    WHERE email = ? AND code = ? AND used = 0 AND expires_at > ?
+    ORDER BY id DESC LIMIT 1
+  `).get(cleanEmail, cleanCode, Date.now()) as any;
+
+  if (!resetRecord) {
+    return res.status(400).json({ error: 'Invalid or expired recovery code. Please request a new code.' });
+  }
+
+  // Hash new password
+  const salt = bcrypt.genSaltSync(10);
+  const hash = bcrypt.hashSync(new_password.trim(), salt);
+
+  db.prepare('UPDATE admins SET password_hash = ? WHERE email = ?').run(hash, cleanEmail);
+  db.prepare('UPDATE password_resets SET used = 1 WHERE id = ?').run(resetRecord.id);
+
+  console.log(`[Admin Security] Password successfully reset for ${cleanEmail}`);
+
+  res.json({
+    success: true,
+    message: 'Your admin password has been successfully reset! You can now sign in with your new password.',
   });
 });
 
