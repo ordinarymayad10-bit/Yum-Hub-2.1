@@ -1,0 +1,6 @@
+{
+  "name": "YUM HUB - Premium Chocolate Bakery & Cake Store",
+  "description": "YUM HUB is a luxury artisanal chocolate bakery and custom cake boutique in Balaganj, Sylhet, Bangladesh. Fresh handcrafted celebration cakes, cupcakes, brownies, and custom orders.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
